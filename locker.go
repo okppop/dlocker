@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"errors"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -17,7 +18,7 @@ type Locker struct {
 
 // New create a Locker instance with default Options, which
 // you don't have to config anything besides redis client.
-// default option see option.go: Options.complete
+// Default option see Options.complete()
 func New(client *redis.Client) *Locker {
 	defaultOptions := Options{}
 	defaultOptions = defaultOptions.complete()
@@ -30,7 +31,7 @@ func New(client *redis.Client) *Locker {
 
 // NewWithOptions create a Locker instance with opts, fields
 // in opts not specified will replace with default value,
-// see option.go: Options.complete
+// see Option.complete()
 func NewWithOptions(client *redis.Client, opts Options) *Locker {
 	opts = opts.complete()
 
@@ -40,22 +41,46 @@ func NewWithOptions(client *redis.Client, opts Options) *Locker {
 	}
 }
 
-// unlockScript is the lua script pass to redis EVAL
+// unlockScript is the lua script pass to redis EVAL for unlock
 //
 //go:embed lua/unlock.lua
 var unlockScript string
 
 // UnlockFunc represent the function to unlock, only return after
-// (Locker).TryLock and (Locker).Lock
+// *Locker.TryLock() and *Locker.Lock()
 type UnlockFunc func(context.Context) error
 
-// ErrLockerIsOccupied returned when the locker is occupied by others
+// ErrLockerIsOccupied returned when the locker is occupied by
+// others
 var ErrLockerIsOccupied = errors.New("locker is occupied by others")
 
-// TryLock try lock once, if the locker was occupied by others, return
-// ErrLockerIsOccupied error
+// TryLock try lock once, if the locker was occupied by others,
+// return (nil, ErrLockerIsOccupied)
 func (l *Locker) TryLock(ctx context.Context) (UnlockFunc, error) {
 	return l.lock(ctx)
+}
+
+// Lock keep trying to lock until ctx was canceled, so make sure
+// use a proper context.
+// The retry interval between two attempts according to
+// *Locker.opts.RetryInterval
+func (l *Locker) Lock(ctx context.Context) (UnlockFunc, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+		unlock, err := l.lock(ctx)
+		if err == ErrLockerIsOccupied {
+			<-time.Tick(l.opts.RetryInterval)
+			return l.Lock(ctx)
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		return unlock, nil
+	}
 }
 
 func (l *Locker) lock(ctx context.Context) (UnlockFunc, error) {

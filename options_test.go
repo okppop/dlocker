@@ -13,7 +13,7 @@ func TestOptionsComplete(t *testing.T) {
 
 	_, err := uuid.Parse(opts.Key)
 	if err != nil {
-		t.Error("Options.Key init error: ", err)
+		t.Error("Options.Key init error:", err)
 	}
 
 	if opts.ValueGeneratorFunc == nil {
@@ -21,10 +21,10 @@ func TestOptionsComplete(t *testing.T) {
 	}
 
 	if opts.RetryInterval != 50*time.Millisecond {
-		t.Error("Options.RetryInterval init error, current RetryInterval: ", opts.RetryInterval)
+		t.Error("Options.RetryInterval init error, current RetryInterval:", opts.RetryInterval)
 	}
 
 	if opts.TTL != time.Second {
-		t.Error("Optinos.TTL init error, current TTL: ", opts.TTL)
+		t.Error("Optinos.TTL init error, current TTL:", opts.TTL)
 	}
 }

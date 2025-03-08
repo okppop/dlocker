@@ -15,6 +15,7 @@ type Options struct {
 	ValueGeneratorFunc func() string
 
 	// RetryInterval is the interval between each time try to lock
+	// in *Locker.Lock()
 	RetryInterval time.Duration
 
 	// TTL is the expiration send to redis to avoid dead lock,
