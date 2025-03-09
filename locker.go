@@ -9,16 +9,30 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Locker is a distributed locker, config connection setting in
-// *redis.Client, Options control locker's behavior
+// unlockScript is the lua script pass to redis EVAL for unlock.
+//
+//go:embed lua/unlock.lua
+var unlockScript string
+
+// UnlockFunc represent the function to unlock, only return after
+// *Locker.TryLock() and *Locker.Lock().
+type UnlockFunc func(context.Context) error
+
+// ErrLockIsAcquired returned when the lock is acquired by
+// others.
+var ErrLockIsAcquired = errors.New("lock is acquired by others")
+
+// Locker is a distributed lock, config connection setting in
+// *redis.Client, Options control locker's behavior.
 type Locker struct {
 	client *redis.Client
 	opts   Options
 }
 
-// New create a Locker instance with default Options, which
-// you don't have to config anything besides redis client.
-// Default option see Options.complete()
+// New create a Locker with default Options, which is not
+// recommend.
+//
+// Default option see Options.complete().
 func New(client *redis.Client) *Locker {
 	defaultOptions := Options{}
 	defaultOptions = defaultOptions.complete()
@@ -29,9 +43,10 @@ func New(client *redis.Client) *Locker {
 	}
 }
 
-// NewWithOptions create a Locker instance with opts, fields
-// in opts not specified will replace with default value,
-// see Option.complete()
+// NewWithOptions create a Locker with opts, fields in opts
+// not specified will replace with default value.
+//
+// Default option see Options.complete().
 func NewWithOptions(client *redis.Client, opts Options) *Locker {
 	opts = opts.complete()
 
@@ -41,58 +56,49 @@ func NewWithOptions(client *redis.Client, opts Options) *Locker {
 	}
 }
 
-// unlockScript is the lua script pass to redis EVAL for unlock
-//
-//go:embed lua/unlock.lua
-var unlockScript string
-
-// UnlockFunc represent the function to unlock, only return after
-// *Locker.TryLock() and *Locker.Lock()
-type UnlockFunc func(context.Context) error
-
-// ErrLockerIsOccupied returned when the locker is occupied by
-// others
-var ErrLockerIsOccupied = errors.New("locker is occupied by others")
-
-// TryLock try lock once, if the locker was occupied by others,
-// return (nil, ErrLockerIsOccupied)
+// TryLock try to acquire lock once, if the lock was acquired by
+// others, return (nil, ErrLockIsAcquired).
 func (l *Locker) TryLock(ctx context.Context) (UnlockFunc, error) {
-	return l.lock(ctx)
+	return l.lockWithValue(ctx, l.opts.ValueGeneratorFunc())
 }
 
-// Lock keep trying to lock until ctx was canceled, so make sure
-// use a proper context.
-// The retry interval between two attempts according to
-// *Locker.opts.RetryInterval
+// Lock keep trying to acquire lock until ctx is canceled or
+// deadline exceeded, ensure to use a proper context to avoid
+// infinite retries.
+//
+// Retry interval between two attempts according to
+// *Locker.opts.RetryInterval.
 func (l *Locker) Lock(ctx context.Context) (UnlockFunc, error) {
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
-		unlock, err := l.lock(ctx)
-		if err == ErrLockerIsOccupied {
-			<-time.Tick(l.opts.RetryInterval)
-			return l.Lock(ctx)
-		}
+	value := l.opts.ValueGeneratorFunc()
 
-		if err != nil {
-			return nil, err
-		}
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+			unlock, err := l.lockWithValue(ctx, value)
+			if err == ErrLockIsAcquired {
+				<-time.After(l.opts.RetryInterval)
+				break
+			}
 
-		return unlock, nil
+			if err != nil {
+				return nil, err
+			}
+
+			return unlock, nil
+		}
 	}
 }
 
-func (l *Locker) lock(ctx context.Context) (UnlockFunc, error) {
-	value := l.opts.ValueGeneratorFunc()
-
+func (l *Locker) lockWithValue(ctx context.Context, value string) (UnlockFunc, error) {
 	ok, err := l.client.SetNX(ctx, l.opts.Key, value, l.opts.TTL).Result()
 	if err != nil {
 		return nil, err
 	}
 
 	if !ok {
-		return nil, ErrLockerIsOccupied
+		return nil, ErrLockIsAcquired
 	}
 
 	return func(ctx context.Context) error {
@@ -104,4 +110,16 @@ func (l *Locker) lock(ctx context.Context) (UnlockFunc, error) {
 
 		return nil
 	}, nil
+}
+
+func (l *Locker) GetKey() string {
+	return l.opts.Key
+}
+
+func (l *Locker) GetRetryInterval() time.Duration {
+	return l.opts.RetryInterval
+}
+
+func (l *Locker) GetTTL() time.Duration {
+	return l.opts.TTL
 }

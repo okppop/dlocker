@@ -38,7 +38,7 @@ func (opt Options) complete() Options {
 	}
 
 	if opt.TTL == 0 {
-		opt.TTL = time.Second
+		opt.TTL = 3 * time.Second
 	}
 
 	if opt.TTL < time.Millisecond {

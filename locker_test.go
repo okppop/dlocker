@@ -28,18 +28,15 @@ func TestTryLock(t *testing.T) {
 }
 
 func TestLock(t *testing.T) {
-	l := NewWithOptions(client, Options{
-		Key: "key1",
-	})
+	l := New(client)
 
 	wg := sync.WaitGroup{}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
 	for range 500 {
 		wg.Add(1)
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-
 			unlock, err := l.Lock(ctx)
 			if err != nil {
 				t.Error("error happend in lock:", err)
