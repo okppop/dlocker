@@ -25,8 +25,9 @@ var ErrLockIsAcquired = errors.New("lock is acquired by others")
 // Locker is a distributed lock, config connection setting in
 // *redis.Client, Options control locker's behavior.
 type Locker struct {
-	client *redis.Client
-	opts   Options
+	client       *redis.Client
+	opts         Options
+	currentValue string
 }
 
 // New create a Locker with default Options, which is not
@@ -101,7 +102,11 @@ func (l *Locker) lockWithValue(ctx context.Context, value string) (UnlockFunc, e
 		return nil, ErrLockIsAcquired
 	}
 
+	l.currentValue = value
+
 	return func(ctx context.Context) error {
+		l.currentValue = ""
+
 		// TODO: maybe some edge condition
 		_, err := l.client.Eval(ctx, unlockScript, []string{l.opts.Key}, value).Result()
 		if err != nil {
@@ -122,4 +127,11 @@ func (l *Locker) GetRetryInterval() time.Duration {
 
 func (l *Locker) GetTTL() time.Duration {
 	return l.opts.TTL
+}
+
+// GetValue should only be called when you are acquired the lock,
+// otherwise you may get other owner's value instead of empty
+// string.
+func (l *Locker) GetValue() string {
+	return l.currentValue
 }

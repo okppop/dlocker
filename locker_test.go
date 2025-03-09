@@ -41,7 +41,11 @@ func TestLock(t *testing.T) {
 			if err != nil {
 				t.Error("error happend in lock:", err)
 			} else {
-				err = unlock(ctx)
+				if l.GetValue() == "" {
+					t.Error("value should not be empty before unlock")
+				}
+
+				err := unlock(ctx)
 				if err != nil {
 					t.Error("error happend in unlock:", err)
 				}
