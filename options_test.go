@@ -24,7 +24,7 @@ func TestOptionsComplete(t *testing.T) {
 		t.Error("Options.RetryInterval init error, current RetryInterval:", opts.RetryInterval)
 	}
 
-	if opts.TTL != 3*time.Second {
+	if opts.TTL != 5*time.Second {
 		t.Error("Optinos.TTL init error, current TTL:", opts.TTL)
 	}
 }

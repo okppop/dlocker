@@ -15,12 +15,13 @@ type Options struct {
 	ValueGeneratorFunc func() string
 
 	// RetryInterval is the interval between each time try to lock
-	// in *Locker.Lock()
+	// in *Locker.Lock(), not include network IO cost.
 	RetryInterval time.Duration
 
 	// TTL is the expiration send to redis to avoid dead lock,
-	// minimal supported value by redis is 1ms, Options.complete
-	// will trim any value smaller than 1ms to 1ms
+	// minimal supported value by redis is 1ms.
+	//
+	// But Options.complete will trim any value smaller than 1s to 1s
 	TTL time.Duration
 }
 
@@ -38,11 +39,11 @@ func (opt Options) complete() Options {
 	}
 
 	if opt.TTL == 0 {
-		opt.TTL = 3 * time.Second
+		opt.TTL = 5 * time.Second
 	}
 
-	if opt.TTL < time.Millisecond {
-		opt.TTL = time.Millisecond
+	if opt.TTL < time.Second {
+		opt.TTL = time.Second
 	}
 
 	return opt
