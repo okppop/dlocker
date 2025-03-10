@@ -58,6 +58,22 @@ func TestLock(t *testing.T) {
 	wg.Wait()
 }
 
+func TestAutoRenewal(t *testing.T) {
+	l := New(client)
+	ctx := context.Background()
+
+	unlock, err := l.Lock(ctx)
+	if err != nil {
+		t.Error("error happend in lock:", err)
+	}
+
+	time.Sleep(time.Minute)
+	err = unlock(ctx)
+	if err != nil {
+		t.Error("error happend in unlock:", err)
+	}
+}
+
 func init() {
 	c := redis.NewClient(&redis.Options{
 		Network:  "tcp",

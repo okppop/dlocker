@@ -14,6 +14,17 @@ import (
 //go:embed lua/unlock.lua
 var unlockScript string
 
+// renewalScript is the lua script pass to redis EVAL for renewal.
+//
+//go:embed lua/renewal.lua
+var renewalScript string
+
+// renewalPScript is similar to renewalScript, for the
+// conditions which Options.AutoRenewalTTL smaller than 1s.
+//
+//go:embed lua/renewal_p.lua
+var renewalPScript string
+
 // UnlockFunc represent the function to unlock, only return after
 // *Locker.TryLock() and *Locker.Lock().
 type UnlockFunc func(context.Context) error
@@ -25,9 +36,11 @@ var ErrLockIsAcquired = errors.New("lock is acquired by others")
 // Locker is a distributed lock, config connection setting in
 // *redis.Client, Options control locker's behavior.
 type Locker struct {
-	client       *redis.Client
-	opts         Options
-	currentValue string
+	client        *redis.Client
+	opts          Options
+	currentValue  string
+	renewalScript string
+	renewalTTLArg int64
 }
 
 // New create a Locker with default Options, which is not
@@ -39,8 +52,10 @@ func New(client *redis.Client) *Locker {
 	defaultOptions = defaultOptions.complete()
 
 	return &Locker{
-		client: client,
-		opts:   defaultOptions,
+		client:        client,
+		opts:          defaultOptions,
+		renewalScript: renewalScript,
+		renewalTTLArg: int64(defaultOptions.AutoRenewalTTL / time.Second),
 	}
 }
 
@@ -51,9 +66,24 @@ func New(client *redis.Client) *Locker {
 func NewWithOptions(client *redis.Client, opts Options) *Locker {
 	opts = opts.complete()
 
+	var script string
+	var ttlArg int64
+
+	if !opts.DisableAutoRenewal {
+		if usePrecise(opts.AutoRenewalTTL) {
+			script = renewalPScript
+			ttlArg = int64(opts.AutoRenewalTTL / time.Millisecond)
+		} else {
+			script = renewalScript
+			ttlArg = int64(opts.AutoRenewalTTL / time.Second)
+		}
+	}
+
 	return &Locker{
-		client: client,
-		opts:   opts,
+		client:        client,
+		opts:          opts,
+		renewalScript: script,
+		renewalTTLArg: ttlArg,
 	}
 }
 
@@ -104,8 +134,12 @@ func (l *Locker) lockWithValue(ctx context.Context, value string) (UnlockFunc, e
 
 	l.currentValue = value
 
+	autoRenewalCtx, cancelAutoRenewal := context.WithCancel(context.Background())
+	go l.autoRenewal(autoRenewalCtx, value)
+
 	return func(ctx context.Context) error {
 		l.currentValue = ""
+		cancelAutoRenewal()
 
 		// TODO: maybe some edge condition
 		_, err := l.client.Eval(ctx, unlockScript, []string{l.opts.Key}, value).Result()
@@ -115,6 +149,22 @@ func (l *Locker) lockWithValue(ctx context.Context, value string) (UnlockFunc, e
 
 		return nil
 	}, nil
+}
+
+func (l *Locker) autoRenewal(ctx context.Context, value string) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(l.opts.AutoRenewalInterval):
+			_, err := l.client.Eval(ctx, l.renewalScript, []string{l.opts.Key}, value, l.renewalTTLArg).Result()
+
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return
+			}
+			// TODO: handle error
+		}
+	}
 }
 
 func (l *Locker) GetKey() string {
@@ -134,4 +184,8 @@ func (l *Locker) GetTTL() time.Duration {
 // string.
 func (l *Locker) GetValue() string {
 	return l.currentValue
+}
+
+func usePrecise(d time.Duration) bool {
+	return d < time.Second || d%time.Second != 0
 }

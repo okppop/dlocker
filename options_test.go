@@ -24,7 +24,19 @@ func TestOptionsComplete(t *testing.T) {
 		t.Error("Options.RetryInterval init error, current RetryInterval:", opts.RetryInterval)
 	}
 
-	if opts.TTL != 5*time.Second {
+	if opts.TTL != 6*time.Second {
 		t.Error("Optinos.TTL init error, current TTL:", opts.TTL)
+	}
+
+	if opts.DisableAutoRenewal != false {
+		t.Error("Options.DisableAutoRenewal init error, current value:", opts.DisableAutoRenewal)
+	}
+
+	if opts.AutoRenewalInterval != 3*time.Second {
+		t.Error("Options.AutoRenewalInterval init error, current value:", opts.AutoRenewalInterval)
+	}
+
+	if opts.AutoRenewalTTL != 6*time.Second {
+		t.Error("Options.AutoRenewalTTL init error, current value:", opts.AutoRenewalTTL)
 	}
 }
