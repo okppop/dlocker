@@ -134,12 +134,20 @@ func (l *Locker) lockWithValue(ctx context.Context, value string) (UnlockFunc, e
 
 	l.currentValue = value
 
-	autoRenewalCtx, cancelAutoRenewal := context.WithCancel(context.Background())
-	go l.autoRenewal(autoRenewalCtx, value)
+	var cancelAutoRenewal context.CancelFunc
+	if !l.opts.DisableAutoRenewal {
+		autoRenewalCtx, cancel := context.WithCancel(context.Background())
+		cancelAutoRenewal = cancel
+
+		go l.autoRenewal(autoRenewalCtx, value)
+	}
 
 	return func(ctx context.Context) error {
 		l.currentValue = ""
-		cancelAutoRenewal()
+
+		if !l.opts.DisableAutoRenewal {
+			cancelAutoRenewal()
+		}
 
 		// TODO: maybe some edge condition
 		_, err := l.client.Eval(ctx, unlockScript, []string{l.opts.Key}, value).Result()
