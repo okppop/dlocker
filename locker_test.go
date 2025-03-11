@@ -17,7 +17,7 @@ var client *redis.Client = redis.NewClient(&redis.Options{
 })
 
 func TestLock(t *testing.T) {
-	l := New(client, LockerOptions{
+	l := NewLocker(client, LockerOptions{
 		Key: "k1",
 	})
 	ctx := context.Background()
@@ -91,7 +91,7 @@ func TestLock(t *testing.T) {
 }
 
 func TestTryLock(t *testing.T) {
-	l := New(client, LockerOptions{
+	l := NewLocker(client, LockerOptions{
 		Key: "k1",
 	})
 	ctx := context.Background()
@@ -155,7 +155,7 @@ func TestTryLock(t *testing.T) {
 }
 
 func TestLockWithAutoRenewal(t *testing.T) {
-	l := New(client, LockerOptions{
+	l := NewLocker(client, LockerOptions{
 		Key: "k1",
 	})
 	ctx := context.Background()
@@ -291,7 +291,7 @@ func TestLockWithAutoRenewal(t *testing.T) {
 }
 
 func TestTryLockWithAutoRenewal(t *testing.T) {
-	l := New(client, LockerOptions{
+	l := NewLocker(client, LockerOptions{
 		Key: "k1",
 	})
 	ctx := context.Background()

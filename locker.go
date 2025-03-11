@@ -47,11 +47,11 @@ type Locker struct {
 	_currentValue string
 }
 
-// New create a Locker with client and opts, fields in opts
-// weren't specified will be replaced with default value,
-// besides Key which must specify, otherwise cause panic,
-// see LockerOptions and LockerOptions.complete.
-func New(client *redis.Client, opts LockerOptions) *Locker {
+// NewLocker create a Locker with client and opts, fields
+// in opts weren't specified will be replaced with default
+// value, besides Key which must specify, otherwise cause
+// panic, see LockerOptions and LockerOptions.complete.
+func NewLocker(client *redis.Client, opts LockerOptions) *Locker {
 	opts = opts.complete()
 
 	return &Locker{
