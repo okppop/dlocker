@@ -246,11 +246,11 @@ func (l *Locker) unlock(ctx context.Context, value string) error {
 // Action interval respect Locker.opts.AutoRenewalInterval,
 // renewal TTL set to Locker.opts.AutoRenewalTTL.
 func (l *Locker) autoRenewal(ctx context.Context, value string, errChan chan<- error) {
+	defer close(errChan)
 	for {
 		select {
 		// unlock was called.
 		case <-ctx.Done():
-			close(errChan)
 			return
 		case <-time.After(l.opts.AutoRenewalInterval):
 			res, err := l.client.Eval(ctx, renewalScript, []string{l.opts.Key}, value, int64(l.opts.AutoRenewalTTL/time.Second)).Result()
@@ -258,12 +258,10 @@ func (l *Locker) autoRenewal(ctx context.Context, value string, errChan chan<- e
 			switch err {
 			// unlock was called during renewal.
 			case context.Canceled, context.DeadlineExceeded:
-				close(errChan)
 				return
 			// key is not set, maybe expired.
 			case redis.Nil:
 				errChan <- ErrLockKeyIsNotSet
-				close(errChan)
 				return
 			case nil:
 				switch res.(type) {
@@ -274,14 +272,12 @@ func (l *Locker) autoRenewal(ctx context.Context, value string, errChan chan<- e
 				// error seriously.
 				default:
 					errChan <- ErrLockIsAcquired
-					close(errChan)
 					return
 				}
 			default:
 				// probably network issue, check error for
 				// details.
 				errChan <- err
-				close(errChan)
 				return
 			}
 		}
