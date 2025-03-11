@@ -1,4 +1,4 @@
-package dlocker
+package lockerd
 
 import (
 	"context"
@@ -9,191 +9,292 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// unlockScript is the lua script pass to redis EVAL for unlock.
-//
-//go:embed lua/unlock.lua
-var unlockScript string
+var (
+	// unlockScript is the lua script pass to redis EVAL
+	// for unlock.
+	//
+	//go:embed lua/unlock.lua
+	unlockScript string
 
-// renewalScript is the lua script pass to redis EVAL for renewal.
-//
-//go:embed lua/renewal.lua
-var renewalScript string
+	// renewalScript is the lua script pass to redis EVAL
+	// for renewal.
+	//
+	//go:embed lua/renewal.lua
+	renewalScript string
+)
 
-// renewalPScript is similar to renewalScript, for the
-// conditions which Options.AutoRenewalTTL smaller than 1s.
-//
-//go:embed lua/renewal_p.lua
-var renewalPScript string
+var (
+	// ErrLockIsAcquired returned when lock is acquired by
+	// others.
+	ErrLockIsAcquired = errors.New("lock is acquired by others, therefor can't be lock, unlock or renewal")
 
-// UnlockFunc represent the function to unlock, only return after
-// *Locker.TryLock() and *Locker.Lock().
+	// ErrLockKeyIsNotSet returned when no one acquire
+	// lock, key is not set, therefor can't be unlock or
+	// renewal.
+	ErrLockKeyIsNotSet = errors.New("lock key is not set, can't be unlock or renewal")
+)
+
+// UnlockFunc represent the function to unlock.
 type UnlockFunc func(context.Context) error
 
-// ErrLockIsAcquired returned when the lock is acquired by
-// others.
-var ErrLockIsAcquired = errors.New("lock is acquired by others")
-
-// Locker is a distributed lock, config connection setting in
-// *redis.Client, Options control locker's behavior.
+// Locker represent distributed lock for single redis node.
 type Locker struct {
-	client        *redis.Client
-	opts          Options
-	currentValue  string
-	renewalScript string
-	renewalTTLArg int64
+	// client provides redis connections and config.
+	client *redis.Client
+	// opts control lock's behavior.
+	opts LockerOptions
+	// internal field
+	_currentValue string
 }
 
-// New create a Locker with default Options, which is not
-// recommend.
-//
-// Default option see Options.complete().
-func New(client *redis.Client) *Locker {
-	defaultOptions := Options{}
-	defaultOptions = defaultOptions.complete()
-
-	return &Locker{
-		client:        client,
-		opts:          defaultOptions,
-		renewalScript: renewalScript,
-		renewalTTLArg: int64(defaultOptions.AutoRenewalTTL / time.Second),
-	}
-}
-
-// NewWithOptions create a Locker with opts, fields in opts
-// not specified will replace with default value.
-//
-// Default option see Options.complete().
-func NewWithOptions(client *redis.Client, opts Options) *Locker {
+// New create a Locker with client and opts, fields in opts
+// weren't specified will be replaced with default value,
+// besides Key which must specify, otherwise cause panic,
+// see LockerOptions and LockerOptions.complete.
+func New(client *redis.Client, opts LockerOptions) *Locker {
 	opts = opts.complete()
 
-	var script string
-	var ttlArg int64
-
-	if !opts.DisableAutoRenewal {
-		if usePrecise(opts.AutoRenewalTTL) {
-			script = renewalPScript
-			ttlArg = int64(opts.AutoRenewalTTL / time.Millisecond)
-		} else {
-			script = renewalScript
-			ttlArg = int64(opts.AutoRenewalTTL / time.Second)
-		}
-	}
-
 	return &Locker{
-		client:        client,
-		opts:          opts,
-		renewalScript: script,
-		renewalTTLArg: ttlArg,
+		client: client,
+		opts:   opts,
 	}
-}
-
-// TryLock try to acquire lock once, if the lock was acquired by
-// others, return (nil, ErrLockIsAcquired).
-func (l *Locker) TryLock(ctx context.Context) (UnlockFunc, error) {
-	return l.lockWithValue(ctx, l.opts.ValueGeneratorFunc())
 }
 
 // Lock keep trying to acquire lock until ctx is canceled or
-// deadline exceeded, ensure to use a proper context to avoid
+// deadline exceeded, ensure passing a proper ctx to avoid
 // infinite retries.
 //
+// To unlock lock, call UnlockFunc that returned.
+//
 // Retry interval between two attempts according to
-// *Locker.opts.RetryInterval.
+// Locker.opts.RetryInterval.
 func (l *Locker) Lock(ctx context.Context) (UnlockFunc, error) {
 	value := l.opts.ValueGeneratorFunc()
 
+	// Go doesn't support tail call optimization, see:
+	// https://groups.google.com/g/golang-nuts/c/0oIZPHhrDzY/m/2nCpUZDKZAAJ
 	for {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		default:
-			unlock, err := l.lockWithValue(ctx, value)
-			if err == ErrLockIsAcquired {
-				<-time.After(l.opts.RetryInterval)
-				break
-			}
+			unlock, err := l.tryLock(ctx, value)
 
-			if err != nil {
+			switch err {
+			// key exists, SET fail.
+			case ErrLockIsAcquired:
+				<-time.After(l.opts.RetryInterval)
+				continue
+			case nil:
+				return unlock, nil
+			// connection error, or ctx done during
+			// Locker.tryLock.
+			default:
 				return nil, err
 			}
-
-			return unlock, nil
 		}
 	}
 }
 
-func (l *Locker) lockWithValue(ctx context.Context, value string) (UnlockFunc, error) {
+// TryLock try to acquire lock once, if lock was acquired by
+// others, return (nil, ErrLockIsAcquired).
+//
+// To unlock lock, call UnlockFunc that returned.
+func (l *Locker) TryLock(ctx context.Context) (UnlockFunc, error) {
+	return l.tryLock(ctx, l.opts.ValueGeneratorFunc())
+}
+
+// LockWithAutoRenewal keep trying to acquire lock until ctx
+// is canceled or deadline exceeded, ensure passing a proper
+// ctx to avoid infinite retries.
+//
+// To unlock lock, call UnlockFunc that returned.
+//
+// Retry interval between two attempts according to
+// Locker.opts.RetryInterval.
+//
+// If success, a goroutinue will be started to auto renewal
+// the lock for avoiding lock expire when reach
+// Locker.opts.TTL, the read-only channel returned will
+// pass error which happend in auto renewal goroutine.
+func (l *Locker) LockWithAutoRenewal(ctx context.Context) (UnlockFunc, <-chan error, error) {
+	value := l.opts.ValueGeneratorFunc()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		default:
+			unlock, errChan, err := l.tryLockWithAutoRenewal(ctx, value)
+
+			switch err {
+			// key exists, SET fail.
+			case ErrLockIsAcquired:
+				<-time.After(l.opts.RetryInterval)
+				continue
+			case nil:
+				return unlock, errChan, nil
+			// connection error, or ctx done during
+			// Locker.tryLock.
+			default:
+				return nil, nil, err
+			}
+		}
+	}
+}
+
+// TryLockWithAutoRenewal try to acquire lock once, if lock
+// was acquired by others, return (nil, ErrLockIsAcquired).
+//
+// To unlock lock, call UnlockFunc that returned.
+//
+// If success, a goroutinue will be started to auto renewal
+// the lock for avoiding lock expire when reach
+// Locker.opts.TTL, the read-only channel returned will
+// pass error which happend in auto renewal goroutine.
+func (l *Locker) TryLockWithAutoRenewal(ctx context.Context) (UnlockFunc, <-chan error, error) {
+	return l.tryLockWithAutoRenewal(ctx, l.opts.ValueGeneratorFunc())
+}
+
+func (l *Locker) tryLock(ctx context.Context, value string) (UnlockFunc, error) {
 	ok, err := l.client.SetNX(ctx, l.opts.Key, value, l.opts.TTL).Result()
+	// connection error, or ctx done.
 	if err != nil {
 		return nil, err
 	}
 
+	// key exists, SET fail.
 	if !ok {
 		return nil, ErrLockIsAcquired
 	}
 
-	l.currentValue = value
+	l._currentValue = value
 
-	var cancelAutoRenewal context.CancelFunc
-	if !l.opts.DisableAutoRenewal {
-		autoRenewalCtx, cancel := context.WithCancel(context.Background())
-		cancelAutoRenewal = cancel
-
-		go l.autoRenewal(autoRenewalCtx, value)
-	}
-
-	return func(ctx context.Context) error {
-		l.currentValue = ""
-
-		if !l.opts.DisableAutoRenewal {
-			cancelAutoRenewal()
-		}
-
-		// TODO: maybe some edge condition
-		_, err := l.client.Eval(ctx, unlockScript, []string{l.opts.Key}, value).Result()
-		if err != nil {
-			return err
-		}
-
-		return nil
-	}, nil
+	return l.pUnlockFunc(value), nil
 }
 
-func (l *Locker) autoRenewal(ctx context.Context, value string) {
+func (l *Locker) tryLockWithAutoRenewal(ctx context.Context, value string) (UnlockFunc, <-chan error, error) {
+	_, err := l.tryLock(ctx, value)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// for control auto renewal goroutinue's life cycle.
+	autoRenewalCtx, cancelAutoRenewal := context.WithCancel(context.Background())
+	errChan := make(chan error, 1)
+
+	go l.autoRenewal(autoRenewalCtx, value, errChan)
+
+	return l.pUnlockFuncWithAutoRenewal(value, cancelAutoRenewal), errChan, nil
+}
+
+// pUnlockFunc return UnlockFunc for Locker.Lock and
+// Locker.TryLock.
+func (l *Locker) pUnlockFunc(value string) UnlockFunc {
+	return func(ctx context.Context) error {
+		l._currentValue = ""
+
+		return l.unlock(ctx, value)
+	}
+}
+
+// pUnlockFuncWithAutoRenewal return UnlockFunc for
+// Locker.LockWithAutoRenewal and
+// Locker.TryLockWithAutoRenewal.
+func (l *Locker) pUnlockFuncWithAutoRenewal(value string, cancelAutoRenewal context.CancelFunc) UnlockFunc {
+	return func(ctx context.Context) error {
+		l._currentValue = ""
+		cancelAutoRenewal()
+
+		return l.unlock(ctx, value)
+	}
+}
+
+func (l *Locker) unlock(ctx context.Context, value string) error {
+	res, err := l.client.Eval(ctx, unlockScript, []string{l.opts.Key}, value).Result()
+	// GET key returns nil.
+	if err == redis.Nil {
+		return ErrLockKeyIsNotSet
+	}
+
+	// connection error, or ctx done.
+	if err != nil {
+		return err
+	}
+
+	switch res.(type) {
+	// redis returns the number of keys it successfully
+	// delete.
+	//
+	// if return 1, everything is fine.
+	//
+	// if return 0, barely happend, maybe key expired
+	// during unlock, I believe it's fine, since the key
+	// must doesn't exist now.
+	case int64:
+		return nil
+	// redis doesn't return a number means lock is acquired
+	// by others.
+	default:
+		return ErrLockIsAcquired
+	}
+}
+
+// autoRenewal renewals lock periodicity, if error happend,
+// send to errChan, close errChan and stop.
+//
+// Action interval respect Locker.opts.AutoRenewalInterval,
+// renewal TTL set to Locker.opts.AutoRenewalTTL.
+func (l *Locker) autoRenewal(ctx context.Context, value string, errChan chan<- error) {
 	for {
 		select {
+		// unlock was called.
 		case <-ctx.Done():
+			close(errChan)
 			return
 		case <-time.After(l.opts.AutoRenewalInterval):
-			_, err := l.client.Eval(ctx, l.renewalScript, []string{l.opts.Key}, value, l.renewalTTLArg).Result()
+			res, err := l.client.Eval(ctx, renewalScript, []string{l.opts.Key}, value, int64(l.opts.AutoRenewalTTL/time.Second)).Result()
 
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			switch err {
+			// unlock was called during renewal.
+			case context.Canceled, context.DeadlineExceeded:
+				close(errChan)
+				return
+			// key is not set, maybe expired.
+			case redis.Nil:
+				errChan <- ErrLockKeyIsNotSet
+				close(errChan)
+				return
+			case nil:
+				switch res.(type) {
+				// renewal success.
+				case int64:
+					continue
+				// lock is acquired by others, take this
+				// error seriously.
+				default:
+					errChan <- ErrLockIsAcquired
+					close(errChan)
+					return
+				}
+			default:
+				// probably network issue, check error for
+				// details.
+				errChan <- err
+				close(errChan)
 				return
 			}
-			// TODO: handle error
 		}
 	}
 }
 
-func (l *Locker) GetKey() string {
-	return l.opts.Key
-}
-
-func (l *Locker) GetRetryInterval() time.Duration {
-	return l.opts.RetryInterval
-}
-
-func (l *Locker) GetTTL() time.Duration {
-	return l.opts.TTL
-}
-
-// GetValue should only be called when you are acquired the lock,
-// otherwise you may get other owner's value instead of empty
-// string.
+// GetValue should only be called when you are acquired the
+// lock, otherwise you may get other owner's value instead
+// of empty string.
 func (l *Locker) GetValue() string {
-	return l.currentValue
+	return l._currentValue
 }
 
-func usePrecise(d time.Duration) bool {
-	return d < time.Second || d%time.Second != 0
+func (l Locker) GetLockerOptionsCopy() LockerOptions {
+	return l.opts
 }

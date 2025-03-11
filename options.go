@@ -1,94 +1,75 @@
-package dlocker
+package lockerd
 
 import (
 	"time"
-
-	"github.com/google/uuid"
 )
 
-type Options struct {
-	// Key for identify each lock.
+type LockerOptions struct {
+	// Key for identify lock.
 	//
-	// Default is a random UUID.
+	// Default: No default value, Must specify.
 	Key string
 
-	// ValueGeneratorFunc produce value to identify ownership
-	// of lock, make sure it generate unique value if you
-	// change it.
+	// ValueGeneratorFunc produce value to identify
+	// ownership of lock, make sure it generate unique
+	// value if you change it.
 	//
-	// Default is defaultGenerator().
+	// Default: defaultValueGenerator
 	ValueGeneratorFunc func() string
 
-	// RetryInterval is the interval between each time try to lock
-	// in *Locker.Lock(), which is not include network IO cost.
+	// RetryInterval is the interval between each time try
+	// to acquire lock in Locker.Lock, which is not include
+	// network IO cost.
 	//
-	// Default is 50ms.
+	// Default: 50ms
 	RetryInterval time.Duration
 
-	// TTL is the expiration send to redis to avoid dead lock,
-	// minimal supported value by redis is 1ms, therefor any value
-	// smaller than 1ms will be replace with 1ms.
+	// TTL is the expiration send to redis to avoid dead
+	// lock, any specified value less than 1s will be
+	// replace with 1s.
 	//
-	// Default is 6s.
+	// Default: 5s
 	TTL time.Duration
 
-	// DisableAutoRenewal control whether use auto renewal, which
-	// is the mechanism to auto renewal TTL if the lock isn't
-	// unlock before reach TTL.
+	// AutoRenewalInterval is the interval of each renewal,
+	// which is not include network IO cost. This option
+	// only work when use auto renewal.
 	//
-	// Default is false.
-	DisableAutoRenewal bool
-
-	// AutoRenewalInterval is the interval of renewal action,
-	// which is not include network IO cost. This option only
-	// work when DisableAutoRenewal is false.
-	//
-	// Default is half of TTL.
+	// Default: TTL / 2
 	AutoRenewalInterval time.Duration
 
-	// AutoRenewalTTL is the TTL that renewal set expire time(TTL)
-	// to, minimal supported value by redis is 1ms, therefor any
-	// value smaller than 1ms will be replace with 1ms. This
-	// option only work when DisableAutoRenewal is false.
+	// AutoRenewalTTL is the TTL that renewal set expiration
+	// to, any specified value less than 1s will be replace
+	// with 1s. This option only work when use auto renewal.
 	//
-	// Default is equal to TTL.
+	// Default: TTL
 	AutoRenewalTTL time.Duration
 }
 
-func (opt Options) complete() Options {
-	if opt.Key == "" {
-		opt.Key = uuid.New().String()
+func (opts LockerOptions) complete() LockerOptions {
+	if opts.Key == "" {
+		panic("Key must be specified")
 	}
 
-	if opt.ValueGeneratorFunc == nil {
-		opt.ValueGeneratorFunc = defaultGenerator
+	if opts.ValueGeneratorFunc == nil {
+		opts.ValueGeneratorFunc = defaultValueGenerator
 	}
 
-	if opt.RetryInterval == 0 {
-		opt.RetryInterval = 50 * time.Millisecond
+	if opts.RetryInterval == 0 {
+		opts.RetryInterval = 50 * time.Millisecond
 	}
 
-	if opt.TTL == 0 {
-		opt.TTL = 6 * time.Second
+	if opts.TTL == 0 {
+		opts.TTL = 5 * time.Second
 	}
 
-	if opt.TTL < time.Millisecond {
-		opt.TTL = time.Millisecond
+	if opts.AutoRenewalInterval == 0 {
+		opts.AutoRenewalInterval = opts.TTL / 2
 	}
 
-	if !opt.DisableAutoRenewal {
-		if opt.AutoRenewalInterval == 0 {
-			opt.AutoRenewalInterval = opt.TTL / 2
-		}
-
-		if opt.AutoRenewalTTL == 0 {
-			opt.AutoRenewalTTL = opt.TTL
-		}
-
-		if opt.AutoRenewalTTL < time.Millisecond {
-			opt.AutoRenewalTTL = time.Millisecond
-		}
+	if opts.AutoRenewalTTL == 0 {
+		opts.AutoRenewalTTL = opts.TTL
 	}
 
-	return opt
+	return opts
 }

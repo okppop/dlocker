@@ -3,7 +3,8 @@
 
 -- return value from redis by condition
 --[[
-values weren't match -> 0
-delete fail          -> 0
-delete success       -> 1
+key is not set       -> nil (redis.nil)
+values weren't match -> currentValue (string)
+delete fail          -> 0 (int64)
+delete success       -> 1 (int64)
 ]]

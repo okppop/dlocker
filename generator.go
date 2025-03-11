@@ -1,4 +1,4 @@
-package dlocker
+package lockerd
 
 import (
 	"os"
@@ -6,9 +6,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// defaultGenerator produce string like that:
+// defaultValueGenerator produce string like that:
 // hostname_fbe262ca-d136-4293-b1fd-644b49c7b548
-func defaultGenerator() string {
+func defaultValueGenerator() string {
 	return getHostName() + "_" + uuid.New().String()
 }
 

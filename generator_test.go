@@ -1,4 +1,4 @@
-package dlocker
+package lockerd
 
 import (
 	"strings"
@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestDefaultGenerator(t *testing.T) {
-	g := defaultGenerator
+func TestDefaultValueGenerator(t *testing.T) {
+	g := defaultValueGenerator
 	values := make([]string, 0, 100)
 	prefix := getHostName() + "_"
 
