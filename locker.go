@@ -49,15 +49,19 @@ type Locker struct {
 
 // NewLocker create a Locker with client and opts, fields
 // in opts weren't specified will be replaced with default
-// value, besides Key which must specify, otherwise cause
-// panic, see LockerOptions and LockerOptions.complete.
-func NewLocker(client *redis.Client, opts LockerOptions) *Locker {
-	opts = opts.complete()
+// value, besides Key which must specify, see LockerOptions
+// and LockerOptions.complete.
+func NewLocker(client *redis.Client, opts LockerOptions) (*Locker, error) {
+	opts, err := opts.complete()
+
+	if err != nil {
+		return nil, err
+	}
 
 	return &Locker{
 		client: client,
 		opts:   opts,
-	}
+	}, nil
 }
 
 // Lock keep trying to acquire lock until ctx is canceled or

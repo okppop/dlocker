@@ -1,6 +1,7 @@
 package lockerd
 
 import (
+	"errors"
 	"time"
 )
 
@@ -18,7 +19,8 @@ type LockerOptions struct {
 	ValueGeneratorFunc func() string
 
 	// RetryInterval is the interval between each time try
-	// to acquire lock in Locker.Lock, which is not include
+	// to acquire lock in Locker.Lock and
+	// Locker.LockWithAutoRenewal, which is not include
 	// network IO cost.
 	//
 	// Default: 50ms
@@ -39,16 +41,16 @@ type LockerOptions struct {
 	AutoRenewalInterval time.Duration
 
 	// AutoRenewalTTL is the TTL that renewal set expiration
-	// to, any specified value less than 1s will be replace
+	// to, any specified value smaller than 1s will be replace
 	// with 1s. This option only work when use auto renewal.
 	//
 	// Default: TTL
 	AutoRenewalTTL time.Duration
 }
 
-func (opts LockerOptions) complete() LockerOptions {
+func (opts LockerOptions) complete() (LockerOptions, error) {
 	if opts.Key == "" {
-		panic("Key must be specified")
+		return opts, errors.New("Key must be specified")
 	}
 
 	if opts.ValueGeneratorFunc == nil {
@@ -63,6 +65,10 @@ func (opts LockerOptions) complete() LockerOptions {
 		opts.TTL = 5 * time.Second
 	}
 
+	if opts.TTL < time.Second {
+		opts.TTL = time.Second
+	}
+
 	if opts.AutoRenewalInterval == 0 {
 		opts.AutoRenewalInterval = opts.TTL / 2
 	}
@@ -71,5 +77,13 @@ func (opts LockerOptions) complete() LockerOptions {
 		opts.AutoRenewalTTL = opts.TTL
 	}
 
-	return opts
+	if opts.AutoRenewalTTL < time.Second {
+		opts.AutoRenewalTTL = time.Second
+	}
+
+	if opts.AutoRenewalInterval > opts.AutoRenewalTTL {
+		return opts, errors.New("AutoRenewalInterval longer than AutoRenewalTTL, will unable to renewal")
+	}
+
+	return opts, nil
 }

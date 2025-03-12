@@ -17,9 +17,12 @@ var client *redis.Client = redis.NewClient(&redis.Options{
 })
 
 func TestLock(t *testing.T) {
-	l := NewLocker(client, LockerOptions{
+	l, err := NewLocker(client, LockerOptions{
 		Key: "k1",
 	})
+	if err != nil {
+		t.Error("NewLocker error:", err)
+	}
 	ctx := context.Background()
 
 	t.Run("lock and unlock", func(t *testing.T) {
@@ -91,9 +94,12 @@ func TestLock(t *testing.T) {
 }
 
 func TestTryLock(t *testing.T) {
-	l := NewLocker(client, LockerOptions{
+	l, err := NewLocker(client, LockerOptions{
 		Key: "k1",
 	})
+	if err != nil {
+		t.Error("NewLocker error:", err)
+	}
 	ctx := context.Background()
 
 	t.Run("lock and unlock", func(t *testing.T) {
@@ -155,9 +161,12 @@ func TestTryLock(t *testing.T) {
 }
 
 func TestLockWithAutoRenewal(t *testing.T) {
-	l := NewLocker(client, LockerOptions{
+	l, err := NewLocker(client, LockerOptions{
 		Key: "k1",
 	})
+	if err != nil {
+		t.Error("NewLocker error:", err)
+	}
 	ctx := context.Background()
 
 	t.Run("lock and unlock", func(t *testing.T) {
@@ -251,7 +260,7 @@ func TestLockWithAutoRenewal(t *testing.T) {
 
 					err := unlock(ctx)
 					if err != nil {
-						t.Error("unlcok error")
+						t.Error("unlock error")
 					}
 
 					for range errChan {
@@ -291,9 +300,12 @@ func TestLockWithAutoRenewal(t *testing.T) {
 }
 
 func TestTryLockWithAutoRenewal(t *testing.T) {
-	l := NewLocker(client, LockerOptions{
+	l, err := NewLocker(client, LockerOptions{
 		Key: "k1",
 	})
+	if err != nil {
+		t.Error("NewLocker error:", err)
+	}
 	ctx := context.Background()
 
 	t.Run("lock and unlock", func(t *testing.T) {
