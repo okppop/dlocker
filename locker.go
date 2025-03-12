@@ -53,7 +53,6 @@ type Locker struct {
 // and LockerOptions.complete.
 func NewLocker(client *redis.Client, opts LockerOptions) (*Locker, error) {
 	opts, err := opts.complete()
-
 	if err != nil {
 		return nil, err
 	}

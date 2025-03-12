@@ -82,7 +82,11 @@ func (opts LockerOptions) complete() (LockerOptions, error) {
 	}
 
 	if opts.AutoRenewalInterval > opts.AutoRenewalTTL {
-		return opts, errors.New("AutoRenewalInterval longer than AutoRenewalTTL, will unable to renewal")
+		return opts, errors.New("AutoRenewalInterval longer than AutoRenewalTTL, unable to renewal")
+	}
+
+	if opts.TTL < opts.AutoRenewalInterval {
+		return opts, errors.New("TTL is smaller than AutoRenewalInterval, unable to renewal")
 	}
 
 	return opts, nil
