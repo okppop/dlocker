@@ -262,7 +262,7 @@ func (l *Locker) autoRenewal(ctx context.Context, value string, errChan chan<- e
 			// unlock was called during renewal.
 			case context.Canceled, context.DeadlineExceeded:
 				return
-			// key is not set, maybe expired.
+			// Key is not set, maybe expired.
 			case redis.Nil:
 				errChan <- ErrLockKeyIsNotSet
 				return
@@ -271,15 +271,14 @@ func (l *Locker) autoRenewal(ctx context.Context, value string, errChan chan<- e
 				// renewal success.
 				case int64:
 					continue
-				// lock is acquired by others, take this
-				// error seriously.
+				// lock is acquired by others, take this error
+				// seriously.
 				default:
 					errChan <- ErrLockIsAcquired
 					return
 				}
+			// probably network issue, check error for details.
 			default:
-				// probably network issue, check error for
-				// details.
 				errChan <- err
 				return
 			}
@@ -287,9 +286,9 @@ func (l *Locker) autoRenewal(ctx context.Context, value string, errChan chan<- e
 	}
 }
 
-// GetValue should only be called when you are acquired the
-// lock, otherwise you may get other owner's value instead
-// of empty string.
+// GetValue should only be called when you are acquired the lock,
+// otherwise you may get other owner's value instead of empty
+// string.
 func (l *Locker) GetValue() string {
 	return l._currentValue
 }
