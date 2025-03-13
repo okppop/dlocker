@@ -5,29 +5,27 @@ import (
 	"time"
 )
 
-type LockerOptions struct {
+type Options struct {
 	// Key for identify lock.
 	//
 	// Default: No default value, Must specify.
 	Key string
 
-	// ValueGeneratorFunc produce value to identify
-	// ownership of lock, make sure it generate unique
-	// value if you change it.
+	// ValueGeneratorFunc produce value to identify ownership of
+	// lock, make sure it generate unique value if you change it.
 	//
 	// Default: defaultValueGenerator
 	ValueGeneratorFunc func() string
 
 	// RetryInterval is the interval between each time try
-	// to acquire lock in Locker.Lock and
-	// Locker.LockWithAutoRenewal, which is not include
-	// network IO cost.
+	// to acquire lock in Lock and LockWithAutoRenewal method,
+	// which is not include network IO cost.
 	//
 	// Default: 50ms
 	RetryInterval time.Duration
 
 	// TTL is the expiration send to redis to avoid dead
-	// lock, any specified value less than 1s will be
+	// lock, any specified value smaller than 1s will be
 	// replace with 1s.
 	//
 	// Default: 5s
@@ -48,7 +46,7 @@ type LockerOptions struct {
 	AutoRenewalTTL time.Duration
 }
 
-func (opts LockerOptions) complete() (LockerOptions, error) {
+func (opts Options) complete() (Options, error) {
 	if opts.Key == "" {
 		return opts, errors.New("Key must be specified")
 	}

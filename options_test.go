@@ -5,14 +5,14 @@ import (
 	"time"
 )
 
-func TestLockerOptionsComplete(t *testing.T) {
+func TestOptionsComplete(t *testing.T) {
 	key := "lock_2000"
-	opts := LockerOptions{
+	opts := Options{
 		Key: key,
 	}
 	opts, err := opts.complete()
 	if err != nil {
-		t.Error("LockerOptions complete error:", err)
+		t.Error("Options complete error:", err)
 	}
 
 	switch {

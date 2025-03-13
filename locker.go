@@ -42,16 +42,16 @@ type Locker struct {
 	// client provides redis connections and config.
 	client *redis.Client
 	// opts control lock's behavior.
-	opts LockerOptions
+	opts Options
 	// internal field
 	_currentValue string
 }
 
 // NewLocker create a Locker with client and opts, fields
 // in opts weren't specified will be replaced with default
-// value, besides Key which must specify, see LockerOptions
-// and LockerOptions.complete.
-func NewLocker(client *redis.Client, opts LockerOptions) (*Locker, error) {
+// value, besides Key which must specify, see Options and
+// Options.complete.
+func NewLocker(client *redis.Client, opts Options) (*Locker, error) {
 	opts, err := opts.complete()
 	if err != nil {
 		return nil, err
@@ -293,6 +293,6 @@ func (l *Locker) GetValue() string {
 	return l._currentValue
 }
 
-func (l Locker) GetLockerOptionsCopy() LockerOptions {
+func (l Locker) GetOptionsCopy() Options {
 	return l.opts
 }
