@@ -13,8 +13,6 @@ go get github.com/redis/go-redis/v9
 
 ## Examples
 
-Some simple example below for you to start, for more information, see Documentation.
-
 ### Single redis node
 ```go
 package main
