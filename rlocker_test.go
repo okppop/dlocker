@@ -139,12 +139,7 @@ func TestRLocker_TryLock(t *testing.T) {
 		}
 
 		if unlock != nil {
-			err = unlock(context.Background())
-			if err != nil {
-				t.Error("unlock error")
-			}
-		} else {
-			t.Error("unlock is nil")
+			t.Error("unlock should be nil")
 		}
 	})
 
@@ -161,12 +156,7 @@ func TestRLocker_TryLock(t *testing.T) {
 		}
 
 		if unlock != nil {
-			err = unlock(ctx)
-			if err != nil {
-				t.Error("unlock error")
-			}
-		} else {
-			t.Error("unlock is nil")
+			t.Error("unlock should be nil")
 		}
 	})
 }
@@ -320,9 +310,8 @@ func TestRLocker_TryLockWithAutoRenewal(t *testing.T) {
 			t.Error("errChan should be nil")
 		}
 
-		err = unlock(ctx)
-		if err != nil {
-			t.Error("unlock error")
+		if unlock != nil {
+			t.Error("unlock should be nil")
 		}
 	})
 
@@ -337,9 +326,8 @@ func TestRLocker_TryLockWithAutoRenewal(t *testing.T) {
 		if errChan != nil {
 			t.Error("errChan should be nil")
 		}
-		err = unlock(ctx)
-		if err != nil {
-			t.Error("unlock error")
+		if unlock != nil {
+			t.Error("unlock should be nil")
 		}
 	})
 
@@ -366,9 +354,8 @@ func TestRLocker_TryLockWithAutoRenewal(t *testing.T) {
 			t.Error("errChan should be nil")
 		}
 
-		err = unlock(ctx)
-		if err != nil {
-			t.Error("unlock error")
+		if unlock != nil {
+			t.Error("unlock should be nil")
 		}
 	})
 }

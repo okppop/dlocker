@@ -164,12 +164,6 @@ func main() {
 	unlock, err := l.Lock(ctx)
 	if err != nil {
 		fmt.Println(err)
-		// call unlock even Lock fail
-		err = unlock(ctx)
-		if err != nil {
-			fmt.Println(err)
-		}
-
 		return
 	}
 
@@ -182,12 +176,6 @@ func main() {
 	unlock, errChan, err := l.LockWithAutoRenewal(ctx)
 	if err != nil {
 		fmt.Println(err)
-
-		err = unlock(ctx)
-		if err != nil {
-			fmt.Println(err)
-		}
-
 		return
 	}
 
@@ -205,16 +193,11 @@ func main() {
 	// 3. error checking
 	unlock, errChan, err = l.LockWithAutoRenewal(ctx)
 	if err != nil {
-		// when err != nil, err always is lockerd.ErrNotMoreThanHalfNodes in here
-		if err == lockerd.ErrNotMoreThanHalfNodes {
+		// when err != nil, err always is context.Canceled
+		// or context.DeadlineExceeded in here.
+		if err == context.Canceled || err == context.DeadlineExceeded {
 			fmt.Println(err)
 		}
-
-		err = unlock(ctx)
-		if err != nil {
-			//
-		}
-
 		return
 	}
 

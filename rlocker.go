@@ -78,7 +78,6 @@ func (l *RLocker) Lock(ctx context.Context) (UnlockFunc, error) {
 		default:
 			unlock, err := l.tryLock(ctx, value)
 			if err == ErrNotMoreThanHalfNodes {
-				unlock(ctx)
 				<-time.After(l.opts.RetryInterval)
 				continue
 			}
@@ -88,13 +87,11 @@ func (l *RLocker) Lock(ctx context.Context) (UnlockFunc, error) {
 	}
 }
 
-// TryLock try to acquire lock once, return a UnlockFunc and
-// ErrNotMoreThanHalfNodes when can't acquire lock at least half
+// TryLock try to acquire lock once, return (nil,
+// ErrNotMoreThanHalfNodes) when can't acquire lock at least half
 // of redis nodes.
 //
-// UnlockFunc should be call even ErrNotMoreThanHalfNodes was
-// returned, to unlock the redis nodes that acquire success in
-// process.
+// To unlock lock, call UnlockFunc that returned.
 func (l *RLocker) TryLock(ctx context.Context) (UnlockFunc, error) {
 	return l.tryLock(ctx, l.opts.ValueGeneratorFunc())
 }
@@ -118,10 +115,6 @@ func (l *RLocker) TryLock(ctx context.Context) (UnlockFunc, error) {
 // returned from channel was wrapped or joined with redis node's
 // info, therefor use errors.Is to estimate what happend rather
 // than err == Errxxx.
-//
-// UnlockFunc should be call even ErrNotMoreThanHalfNodes was
-// returned, to unlock the redis nodes that acquire success in
-// process.
 func (l *RLocker) LockWithAutoRenewal(ctx context.Context) (UnlockFunc, <-chan error, error) {
 	value := l.opts.ValueGeneratorFunc()
 
@@ -132,7 +125,6 @@ func (l *RLocker) LockWithAutoRenewal(ctx context.Context) (UnlockFunc, <-chan e
 		default:
 			unlock, errChan, err := l.tryLockWithAutoRenewal(ctx, value)
 			if err == ErrNotMoreThanHalfNodes {
-				unlock(ctx)
 				<-time.After(l.opts.RetryInterval)
 				continue
 			}
@@ -142,9 +134,9 @@ func (l *RLocker) LockWithAutoRenewal(ctx context.Context) (UnlockFunc, <-chan e
 	}
 }
 
-// TryLockWithAutoRenewal try to acquire lock once, return a
-// UnlockFunc and ErrNotMoreThanHalfNodes when can't acquire lock
-// at least half of redis nodes.
+// TryLockWithAutoRenewal try to acquire lock once, return (nil,
+// ErrNotMoreThanHalfNodes) when can't acquire lock at least half
+// of redis nodes.
 //
 // If success, multiple goroutinues will be started to auto
 // renewal the lock for avoiding lock expire when reach
@@ -153,10 +145,6 @@ func (l *RLocker) LockWithAutoRenewal(ctx context.Context) (UnlockFunc, <-chan e
 // returned from channel was wrapped or joined with redis node's
 // info, therefor use errors.Is to estimate what happend rather
 // than err == Errxxx.
-//
-// UnlockFunc should be call even ErrNotMoreThanHalfNodes was
-// returned, to unlock the redis nodes that acquire success in
-// process.
 func (l *RLocker) TryLockWithAutoRenewal(ctx context.Context) (UnlockFunc, <-chan error, error) {
 	return l.tryLockWithAutoRenewal(ctx, l.opts.ValueGeneratorFunc())
 }
@@ -196,7 +184,8 @@ func (l *RLocker) tryLock(ctx context.Context, value string) (UnlockFunc, error)
 		l._currentValue = value
 		return l.pUnlockFunc(successClients, value), nil
 	} else {
-		return l.pUnlockFuncWhenFail(successClients, value), ErrNotMoreThanHalfNodes
+		l.unlock(ctx, successClients, value)
+		return nil, ErrNotMoreThanHalfNodes
 	}
 }
 
@@ -242,7 +231,8 @@ func (l *RLocker) tryLockWithAutoRenewal(ctx context.Context, value string) (Unl
 
 		return l.pUnlockFuncWithAutoRenewal(successClients, value, cancelAutoRenewal), errChan, nil
 	} else {
-		return l.pUnlockFuncWhenFail(successClients, value), nil, ErrNotMoreThanHalfNodes
+		l.unlock(ctx, successClients, value)
+		return nil, nil, ErrNotMoreThanHalfNodes
 	}
 }
 
@@ -259,12 +249,6 @@ func (l *RLocker) pUnlockFuncWithAutoRenewal(clients []*redis.Client, value stri
 		l._currentValue = ""
 		cancelAutoRenewal()
 
-		return l.unlock(ctx, clients, value)
-	}
-}
-
-func (l *RLocker) pUnlockFuncWhenFail(clients []*redis.Client, value string) UnlockFunc {
-	return func(ctx context.Context) error {
 		return l.unlock(ctx, clients, value)
 	}
 }
