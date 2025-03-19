@@ -378,3 +378,16 @@ func (l *RLocker) GetValue() string {
 func (l RLocker) GetOptionsCopy() Options {
 	return l.opts
 }
+
+func (l *RLocker) Close() error {
+	var finalErr error
+
+	for _, client := range l.clients {
+		err := client.Close()
+		if err != nil {
+			finalErr = errors.Join(finalErr, fmt.Errorf("%s: %w", client.String(), err))
+		}
+	}
+
+	return finalErr
+}

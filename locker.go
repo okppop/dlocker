@@ -296,3 +296,7 @@ func (l *Locker) GetValue() string {
 func (l Locker) GetOptionsCopy() Options {
 	return l.opts
 }
+
+func (l *Locker) Close() error {
+	return l.client.Close()
+}
